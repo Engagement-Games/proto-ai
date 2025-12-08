@@ -8,8 +8,11 @@
     "start": "next start"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@google/generative-ai": "^0.24.1",
     "@types/uuid": "^10.0.0",
     "next": "15.5.2",
+    "openai": "^6.3.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "sharp": "^0.34.3",

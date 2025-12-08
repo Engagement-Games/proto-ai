@@ -1,5 +1,17 @@
 import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+import path from 'path';
+
+// Helper function to convert local image to base64 data URI
+function imageToDataUri(imagePath: string): string {
+  const fullPath = path.join(process.cwd(), imagePath);
+  const imageBuffer = fs.readFileSync(fullPath);
+  const base64 = imageBuffer.toString('base64');
+  const ext = path.extname(imagePath).toLowerCase();
+  const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/webp';
+  return `data:${mimeType};base64,${base64}`;
+}
 
 // Helper function to remove background from an image
 async function removeBackground(imageUrl: string, apiKey: string): Promise<string> {
@@ -39,19 +51,25 @@ async function removeBackground(imageUrl: string, apiKey: string): Promise<strin
 }
 
 export async function POST(request: Request) {
-  // 1. Read keys and UUIDs from environment variables
+  // 1. Read API keys from environment variables
   const apiKey = process.env.RUNWARE_API_KEY;
-  const seedImageUUID = process.env.SEED_IMAGE_UUID;
-  const maskImageUUID = process.env.MASK_IMAGE_UUID;
   const backgroundRemoverApiKey = process.env.BACKGROUND_REMOVER_API_KEY;
 
-  if (!apiKey || !seedImageUUID || !maskImageUUID || !backgroundRemoverApiKey) {
-    const missing = [!apiKey && "RUNWARE_API_KEY", !seedImageUUID && "SEED_IMAGE_UUID", !maskImageUUID && "MASK_IMAGE_UUID", !backgroundRemoverApiKey && "BACKGROUND_REMOVER_API_KEY"].filter(Boolean).join(', ');
+  if (!apiKey || !backgroundRemoverApiKey) {
+    const missing = [!apiKey && "RUNWARE_API_KEY", !backgroundRemoverApiKey && "BACKGROUND_REMOVER_API_KEY"].filter(Boolean).join(', ');
     return NextResponse.json({ error: `Server configuration error: Missing ${missing}` }, { status: 500 });
   }
 
   try {
-    // 2. Get the user-provided prompt and system prompt from the request body
+    // 2. Convert local images to base64 data URIs
+    console.log("--- [Backend Log] Converting local images to data URIs ---");
+    const seedImageDataUri = imageToDataUri('wheel-frame.png');
+    const maskImageDataUri = imageToDataUri('wheel-frame-mask.png');
+    console.log("Seed image size:", Math.round(seedImageDataUri.length / 1024), "KB");
+    console.log("Mask image size:", Math.round(maskImageDataUri.length / 1024), "KB");
+    console.log("-------------------------------------------------");
+
+    // 3. Get the user-provided prompt and system prompt from the request body
     const { prompt, systemPrompt: customSystemPrompt } = await request.json();
 
     if (!prompt) {
@@ -73,27 +91,39 @@ export async function POST(request: Request) {
     console.log("Combined prompt:", combinedPrompt);
     console.log("-------------------------------------------------");
 
-    // 3. Construct the payload using the general SDXL model and the strength parameter
+    // 4. Construct the payload using the general SDXL model and the strength parameter
     const payload = [{
       taskType: "imageInference",
       taskUUID: inpaintTaskUUID,
       positivePrompt: combinedPrompt,
       negativePrompt,
-      seedImage: seedImageUUID,
-      maskImage: maskImageUUID,
-      model: "runware:101@1", // <== CHANGE #1: Using the general SDXL model
+      seedImage: seedImageDataUri,  // Using base64 data URI instead of UUID
+      maskImage: maskImageDataUri,  // Using base64 data URI instead of UUID
+      model: "runware:101@1", // Using the general SDXL model
       width: 1024,
       height: 1024,
-      strength: 0.9,          // <== CHANGE #2: Adding the strength parameter
+      strength: 0.9,          // Adding the strength parameter
       steps: 40,
       CFGScale: 7.0
     }];
     
-    console.log("--- [Backend Log] Sending this payload to Runware API ---");
-    console.log(JSON.stringify(payload, null, 2));
+    console.log("--- [Backend Log] Sending request to Runware API ---");
+    console.log("Payload preview (base64 images truncated for readability):");
+    console.log({
+      taskType: payload[0].taskType,
+      taskUUID: payload[0].taskUUID,
+      model: payload[0].model,
+      width: payload[0].width,
+      height: payload[0].height,
+      strength: payload[0].strength,
+      steps: payload[0].steps,
+      seedImage: `[base64 data URI, ${Math.round(seedImageDataUri.length / 1024)}KB]`,
+      maskImage: `[base64 data URI, ${Math.round(maskImageDataUri.length / 1024)}KB]`,
+      positivePrompt: payload[0].positivePrompt.substring(0, 100) + '...'
+    });
     console.log("------------------------------------------------------");
 
-    // 4. Call the Runware API
+    // 5. Call the Runware API
     const response = await fetch('https://api.runware.ai/v1', {
       method: 'POST',
       headers: {
@@ -119,10 +149,10 @@ export async function POST(request: Request) {
     console.log(imageUrl);
     console.log("------------------------------------------------------");
 
-    // 5. Remove background from the generated image
+    // 6. Remove background from the generated image
     const imageWithRemovedBackground = await removeBackground(imageUrl, backgroundRemoverApiKey);
 
-    // 6. Return the image with removed background to the frontend
+    // 7. Return the image with removed background to the frontend
     return NextResponse.json({ imageUrl: imageWithRemovedBackground });
 
   } catch (error: any) {
