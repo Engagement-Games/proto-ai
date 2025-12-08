@@ -1,7 +1,7 @@
 'use client';
 
 import Wheel from '@/components/Wheel';
-import { CSSProperties, useEffect, useState } from 'react';
+import { CSSProperties, useEffect, useState, useRef } from 'react';
 
 // The fixed styles for the wheel remain unchanged
 const wheelStyle: CSSProperties = {
@@ -106,10 +106,65 @@ export default function Home() {
   const [history, setHistory] = useState<HistoryState[]>([{ scale: 100, position: { x: 0, y: 0 }, stretch: { width: 100, height: 100 } }]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
+  // Website intelligence state
+  type WebsiteData = {
+    primaryColor: string;
+    description: string;
+    socialMedia: { platform: string; url: string }[];
+    competitors: string[];
+    smartPrompt: string;
+  };
+  const [websiteData, setWebsiteData] = useState<WebsiteData | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [iframeError, setIframeError] = useState(false);
+  const [useScreenshot, setUseScreenshot] = useState(false);
+  const [screenshotLoaded, setScreenshotLoaded] = useState(false);
+  const [screenshotError, setScreenshotError] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [activeTab, setActiveTab] = useState<'settings' | 'about'>('settings');
+
   // useEffect to update the prompt textarea when the theme dropdown changes
   useEffect(() => {
+    if (selectedTheme === 'smart') {
+      setPrompt(websiteData?.smartPrompt || 'Please analyze the website first to generate a smart prompt.');
+    } else {
     setPrompt(getPromptForTheme(selectedTheme));
-  }, [selectedTheme]);
+    }
+  }, [selectedTheme, websiteData]);
+
+  // useEffect to detect iframe loading failures (CSP/X-Frame-Options blocks)
+  useEffect(() => {
+    if (!websiteUrl || useScreenshot) return;
+
+    // Reset error state when URL changes
+    setIframeError(false);
+    setScreenshotLoaded(false);
+    setScreenshotError(false);
+    
+    // Set a timeout to check if iframe loaded successfully
+    const timeoutId = setTimeout(() => {
+      const iframe = iframeRef.current;
+      if (!iframe) return;
+
+      try {
+        // Try to access iframe's contentWindow - will throw error if blocked by CSP
+        const iframeDoc = iframe.contentWindow?.document;
+        if (!iframeDoc) {
+          console.log('Iframe blocked by CSP/X-Frame-Options, switching to screenshot');
+          setIframeError(true);
+          setUseScreenshot(true);
+        }
+      } catch (error) {
+        // CSP/X-Frame-Options block detected
+        console.log('Iframe blocked by security policy, switching to screenshot');
+        setIframeError(true);
+        setUseScreenshot(true);
+      }
+    }, 3000); // Wait 3 seconds for iframe to load
+
+    return () => clearTimeout(timeoutId);
+  }, [websiteUrl, useScreenshot]);
   
   // useEffect to restore saved game configuration on mount
   useEffect(() => {
@@ -127,6 +182,7 @@ export default function Home() {
         if (config.imagePosition) setImagePosition(config.imagePosition);
         if (config.imageStretch) setImageStretch(config.imageStretch);
         if (config.frameOnTop !== undefined) setFrameOnTop(config.frameOnTop);
+        if (config.websiteData) setWebsiteData(config.websiteData);
       } catch (e) {
         console.error('Failed to restore game configuration:', e);
       }
@@ -409,6 +465,45 @@ export default function Home() {
     setShowSettings(false);
   };
 
+  const handleAnalyzeWebsite = async () => {
+    if (!websiteUrl) {
+      setAnalysisError('Please enter a website URL');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const response = await fetch('/api/analyze-website', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: websiteUrl }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to analyze website');
+      }
+
+      setWebsiteData(result.data);
+      setAnalysisError(null);
+      
+      // If Smart theme is selected, update the prompt
+      if (selectedTheme === 'smart') {
+        setPrompt(result.data.smartPrompt);
+      }
+    } catch (error: any) {
+      console.error('Error analyzing website:', error);
+      setAnalysisError(error.message || 'Failed to analyze website');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleSaveGame = () => {
     const gameConfig = {
       segments,
@@ -421,6 +516,7 @@ export default function Home() {
       imagePosition,
       imageStretch,
       frameOnTop,
+      websiteData,
       timestamp: new Date().toISOString()
     };
     localStorage.setItem('wheelGame', JSON.stringify(gameConfig));
@@ -599,27 +695,638 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Main Website Iframe */}
-      <div className="w-full h-screen">
-        <iframe
-          src={websiteUrl}
-          className="w-full h-full border-0"
-          title="Website Preview"
-        />
+    <div className="flex h-screen bg-gray-100">
+      {/* Left Panel - Settings */}
+      <div className="w-1/3 min-w-[400px] max-w-[600px] bg-white shadow-2xl overflow-y-auto">
+        <div className="p-6">
+          <h1 className="text-3xl font-bold mb-6 text-gray-800">Game Settings</h1>
+          
+          {!isGameLaunched ? (
+            // Show only launch button when game is not launched
+            <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+              <button
+                onClick={handleLaunchGame}
+                className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105 shadow-lg text-xl"
+              >
+                🎮 Launch Game
+              </button>
+            </div>
+          ) : (
+            // Show all settings when game is launched
+            <div>
+              {/* Close Game Button */}
+              <button
+                onClick={handleCloseGame}
+                className="w-full mb-6 bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors"
+              >
+                ✕ Close Game
+              </button>
+
+              {/* Tab Navigation */}
+              <div className="flex border-b border-gray-200 mb-6">
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`flex-1 py-2 px-4 font-medium transition-colors ${
+                    activeTab === 'settings'
+                      ? 'border-b-2 border-blue-500 text-blue-600'
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  Settings
+                </button>
+                <button
+                  onClick={() => setActiveTab('about')}
+                  className={`flex-1 py-2 px-4 font-medium transition-colors ${
+                    activeTab === 'about'
+                      ? 'border-b-2 border-blue-500 text-blue-600'
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  About
+                </button>
+              </div>
+
+              {activeTab === 'settings' ? (
+                <>
+              {/* Website URL Input */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-2">
+                  Website URL (for iframe)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={websiteUrl}
+                    onChange={(e) => setWebsiteUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className="flex-1 p-2 border border-gray-300 rounded-md"
+                  />
+                  <button
+                    onClick={handleAnalyzeWebsite}
+                    disabled={isAnalyzing}
+                    className="bg-purple-500 text-white px-4 py-2 rounded-md font-medium hover:bg-purple-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {isAnalyzing ? '⏳ Analyzing...' : '🔍 Analyze'}
+                  </button>
+                </div>
+                {analysisError && (
+                  <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded text-red-600 text-sm">
+                    {analysisError}
+                  </div>
+                )}
+                {websiteData && (
+                  <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-semibold text-gray-800">Analysis Results</h4>
+                      <button
+                        onClick={handleAnalyzeWebsite}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        Re-analyze
+                      </button>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Primary Color:</span>
+                        <div 
+                          className="w-6 h-6 rounded border border-gray-300"
+                          style={{ backgroundColor: websiteData.primaryColor }}
+                        />
+                        <span className="text-gray-600">{websiteData.primaryColor}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium">Description:</span>
+                        <p className="text-gray-600 mt-1">{websiteData.description}</p>
+                      </div>
+                      {websiteData.socialMedia.length > 0 && (
+                        <div>
+                          <span className="font-medium">Social Media:</span>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {websiteData.socialMedia.map((social, idx) => (
+                              <a
+                                key={idx}
+                                href={social.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline text-xs"
+                              >
+                                {social.platform}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {websiteData.competitors.length > 0 && (
+                        <div>
+                          <span className="font-medium">Competitors:</span>
+                          <p className="text-gray-600 mt-1">{websiteData.competitors.join(', ')}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Segments Control */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-2">
+                  Segments (2-5): {segments}
+                </label>
+                <input
+                  type="number"
+                  min="2"
+                  max="5"
+                  value={inputValue}
+                  onChange={handleInputChange}
+                  onBlur={handleInputBlur}
+                  className="w-24 p-2 text-center border border-gray-300 rounded-md"
+                />
+              </div>
+
+              {/* Theme Selection */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-3">Frame Theme</label>
+                <select
+                  value={selectedTheme}
+                  onChange={(e) => setSelectedTheme(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                >
+                  <optgroup label="Classic">
+                    <option value="luxury">Luxury</option>
+                    <option value="christmas">Christmas</option>
+                    <option value="steampunk">Steampunk</option>
+                  </optgroup>
+                  
+                  <optgroup label="Organic & Naturalistic">
+                    <option value="carved-wood">Intricate Carved Wood</option>
+                    <option value="moss-stone">Moss & Lichen Stone</option>
+                    <option value="crystalline-geode">Crystalline Geodes</option>
+                  </optgroup>
+                  
+                  <optgroup label="Mythical & Fantastical">
+                    <option value="dragon-scale">Dragon Scale & Horn</option>
+                    <option value="elven-wood">Elven Glowing Wood</option>
+                    <option value="obsidian-runes">Obsidian & Silver Runes</option>
+                  </optgroup>
+                  
+                  <optgroup label="Cyberpunk & Futuristic">
+                    <option value="neon-holographic">Neon Holographic Lattice</option>
+                    <option value="circuit-board">Integrated Circuit Board</option>
+                    <option value="glitch-art">Glitch-art with Data Streams</option>
+                  </optgroup>
+                  
+                  <optgroup label="Biopunk">
+                    <option value="bio-luminescent">Bio-luminescent Fungi</option>
+                    <option value="engineered-flora">Genetically Engineered Flora</option>
+                  </optgroup>
+                  
+                  <optgroup label="Art Deco">
+                    <option value="art-deco-sunburst">Sunbursts & Exotic Wood</option>
+                    <option value="art-deco-lacquer">Black Lacquer & Gold Leaf</option>
+                  </optgroup>
+                  
+                  <optgroup label="AI-Powered">
+                    <option value="smart">Smart (AI-Generated)</option>
+                  </optgroup>
+                </select>
+                {selectedTheme === 'smart' && !websiteData && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    ℹ️ Please analyze the website first to generate a smart prompt
+                  </p>
+                )}
+        </div>
+
+              {/* Prompt Input */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-2">
+                  Prompt (Editable)
+                </label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={4}
+                  className="w-full p-2 border border-gray-300 rounded-md resize-y"
+                />
+              </div>
+
+              {/* System Prompt Input */}
+              <div className="mb-6">
+                <label className="block text-gray-700 font-medium mb-2">
+                  System Prompt (Editable)
+                </label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  rows={4}
+                  className="w-full p-2 border border-gray-300 rounded-md resize-y"
+                  placeholder="Enter system prompt for AI guardrails..."
+            />
+          </div>
+
+              {/* Image Editing Controls */}
+              {frameImageUrl && (
+                <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-800">Image Editing</h3>
+                    
+                    {/* Undo/Redo Buttons */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleUndo}
+                        disabled={historyIndex <= 0}
+                        className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        title="Undo (Cmd/Ctrl+Z)"
+                      >
+                        ↶ Undo
+                      </button>
+                      <button
+                        onClick={handleRedo}
+                        disabled={historyIndex >= history.length - 1}
+                        className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        title="Redo (Cmd/Ctrl+Shift+Z)"
+                      >
+                        ↷ Redo
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Layer Order Toggle */}
+                  <div className="mb-4 p-3 bg-white rounded-md border border-blue-300">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <span className="text-sm font-medium text-gray-700">
+                        Frame Layer
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs ${!frameOnTop ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
+                          Behind
+                        </span>
+                        <div className="relative inline-block w-12 h-6">
+                          <input
+                            type="checkbox"
+                            checked={frameOnTop}
+                            onChange={(e) => setFrameOnTop(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-12 h-6 bg-gray-300 rounded-full peer peer-checked:bg-blue-600 peer-focus:ring-2 peer-focus:ring-blue-300 transition-colors"></div>
+                          <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
+                        </div>
+                        <span className={`text-xs ${frameOnTop ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
+                          On Top
+                        </span>
+                      </div>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {frameOnTop ? 'Frame is above the wheel (default)' : 'Wheel is above the frame'}
+                    </p>
+                  </div>
+                  
+                  {/* Scale Control */}
+                  <div className="mb-4">
+                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                      Scale: {imageScale}%
+                    </label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="200"
+                      value={imageScale}
+                      onChange={(e) => setImageScale(Number(e.target.value))}
+                      onMouseUp={saveToHistory}
+                      onTouchEnd={saveToHistory}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Position Controls */}
+                  <div className="mb-4">
+                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                      Position
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-600">X: {imagePosition.x}px</label>
+                        <input
+                          type="range"
+                          min="-100"
+                          max="100"
+                          value={imagePosition.x}
+                          onChange={(e) => setImagePosition({...imagePosition, x: Number(e.target.value)})}
+                          onMouseUp={saveToHistory}
+                          onTouchEnd={saveToHistory}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600">Y: {imagePosition.y}px</label>
+                        <input
+                          type="range"
+                          min="-100"
+                          max="100"
+                          value={imagePosition.y}
+                          onChange={(e) => setImagePosition({...imagePosition, y: Number(e.target.value)})}
+                          onMouseUp={saveToHistory}
+                          onTouchEnd={saveToHistory}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stretch Controls */}
+                  <div className="mb-4">
+                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                      Stretch / Fit
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs text-gray-600">Width: {imageStretch.width}%</label>
+                        <input
+                          type="range"
+                          min="50"
+                          max="150"
+                          value={imageStretch.width}
+                          onChange={(e) => setImageStretch({...imageStretch, width: Number(e.target.value)})}
+                          onMouseUp={saveToHistory}
+                          onTouchEnd={saveToHistory}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-600">Height: {imageStretch.height}%</label>
+                        <input
+                          type="range"
+                          min="50"
+                          max="150"
+                          value={imageStretch.height}
+                          onChange={(e) => setImageStretch({...imageStretch, height: Number(e.target.value)})}
+                          onMouseUp={saveToHistory}
+                          onTouchEnd={saveToHistory}
+                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reset Button */}
+                  <button
+                    onClick={() => {
+                      setImageScale(100);
+                      setImagePosition({ x: 0, y: 0 });
+                      setImageStretch({ width: 100, height: 100 });
+                      setFrameOnTop(true);
+                    }}
+                    className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                  >
+                    Reset All Edits
+                  </button>
+                </div>
+              )}
+
+              {/* Generate Frame Button */}
+              <button
+                onClick={handleGenerateFrame}
+                disabled={isLoading}
+                className="w-full px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
+              >
+                {isLoading ? 'Generating...' : 'Generate Frame'}
+              </button>
+
+              {error && (
+                <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg">
+                  <p className="text-red-600">{error}</p>
+                </div>
+              )}
+
+              {/* Save Button */}
+              <button
+                onClick={handleSaveGame}
+                className="w-full bg-green-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-600 transition-all mt-6"
+              >
+                💾 Save Game
+              </button>
+                </>
+              ) : (
+                /* About Tab */
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-800">About This Website</h2>
+                  
+                  {websiteData ? (
+                    <div className="space-y-6">
+                      {/* Primary Color */}
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <h3 className="font-semibold text-gray-800 mb-2">Primary Brand Color</h3>
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-12 h-12 rounded-lg border-2 border-gray-300 shadow-sm"
+                            style={{ backgroundColor: websiteData.primaryColor }}
+                          />
+                          <span className="text-lg font-mono text-gray-700">{websiteData.primaryColor}</span>
+                        </div>
+                      </div>
+
+                      {/* Description */}
+                      <div className="p-4 bg-gray-50 rounded-lg">
+                        <h3 className="font-semibold text-gray-800 mb-2">Description</h3>
+                        <p className="text-gray-700 leading-relaxed">{websiteData.description}</p>
+                      </div>
+
+                      {/* Social Media Links */}
+                      {websiteData.socialMedia.length > 0 && (
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                          <h3 className="font-semibold text-gray-800 mb-3">Social Media</h3>
+                          <div className="flex flex-wrap gap-3">
+                            {websiteData.socialMedia.map((social, idx) => (
+                              <a
+                                key={idx}
+                                href={social.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 bg-white px-4 py-2 rounded-lg border border-gray-300 hover:border-blue-500 hover:bg-blue-50 transition-colors"
+                              >
+                                <span className="font-medium text-gray-800">{social.platform}</span>
+                                <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Competitors */}
+                      {websiteData.competitors.length > 0 && (
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                          <h3 className="font-semibold text-gray-800 mb-3">Industry Competitors</h3>
+                          <div className="flex flex-wrap gap-2">
+                            {websiteData.competitors.map((competitor, idx) => (
+                              <span
+                                key={idx}
+                                className="bg-white px-3 py-1 rounded-full border border-gray-300 text-gray-700 text-sm"
+                              >
+                                {competitor}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Smart Frame Prompt */}
+                      <div className="p-4 bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                        <h3 className="font-semibold text-purple-900 mb-2">AI-Generated Frame Prompt</h3>
+                        <p className="text-gray-700 leading-relaxed italic">{websiteData.smartPrompt}</p>
+                        <p className="text-xs text-purple-600 mt-2">
+                          💡 Select "Smart (AI-Generated)" theme to use this prompt
+                        </p>
+                      </div>
+
+                      {/* Re-analyze Button */}
+                      <button
+                        onClick={handleAnalyzeWebsite}
+                        disabled={isAnalyzing}
+                        className="w-full bg-purple-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-purple-600 transition-all disabled:bg-gray-400"
+                      >
+                        {isAnalyzing ? '⏳ Re-analyzing...' : '🔄 Re-analyze Website'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">🔍</div>
+                      <h3 className="text-lg font-semibold text-gray-700 mb-2">No Website Data Yet</h3>
+                      <p className="text-gray-600 mb-6">
+                        Enter a website URL in the Settings tab and click "Analyze" to get insights about the website.
+                      </p>
+                      <button
+                        onClick={() => setActiveTab('settings')}
+                        className="bg-blue-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                      >
+                        Go to Settings
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Launch Button */}
-      <button
-        onClick={handleLaunchGame}
-        className="fixed bottom-6 right-6 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105 shadow-lg z-50"
-      >
-        Launch
-      </button>
+      {/* Right Panel - Iframe & Game */}
+      <div className="flex-1 relative">
+        {/* Website Iframe or Screenshot */}
+        {useScreenshot || iframeError ? (
+          <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center overflow-auto relative">
+            {!screenshotError && (
+              <img
+                src={`https://image.thum.io/get/width/800/crop/1200/${encodeURIComponent(websiteUrl)}`}
+                alt="Website Screenshot"
+                className={`max-w-full h-auto ${!screenshotLoaded ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+                onError={() => {
+                  console.log('Screenshot failed to load from thum.io');
+                  setScreenshotError(true);
+                }}
+                onLoad={() => {
+                  console.log('Screenshot loaded successfully');
+                  setScreenshotLoaded(true);
+                }}
+              />
+            )}
+            
+            {!screenshotLoaded && !screenshotError && (
+              <div className="flex flex-col items-center justify-center gap-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                <p className="text-gray-600 text-sm">Loading screenshot...</p>
+                <p className="text-gray-500 text-xs">This may take 5-10 seconds</p>
+              </div>
+            )}
+            
+            {screenshotError && (
+              <div className="flex flex-col items-center justify-center gap-4 p-8">
+                <div className="text-6xl">🚫</div>
+                <p className="text-gray-700 font-medium">Screenshot Service Unavailable</p>
+                <p className="text-gray-600 text-sm text-center max-w-md">
+                  This website blocks iframe embedding and the screenshot service is currently unavailable.
+                  You can still analyze the website and generate frames!
+                </p>
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => {
+                      setScreenshotError(false);
+                      setScreenshotLoaded(false);
+                      setUseScreenshot(false);
+                      setIframeError(false);
+                    }}
+                    className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors text-sm"
+                  >
+                    🔄 Try Live Iframe
+                  </button>
+                  <button
+                    onClick={() => {
+                      window.open(websiteUrl, '_blank');
+                    }}
+                    className="bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-green-600 transition-colors text-sm"
+                  >
+                    🌐 Open in New Tab
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            {screenshotLoaded && !screenshotError && (
+              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
+                📸 Screenshot Mode (Site blocks embedding)
+              </div>
+            )}
+            
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+              <button
+                onClick={() => {
+                  setScreenshotError(false);
+                  setScreenshotLoaded(false);
+                  setUseScreenshot(false);
+                  setIframeError(false);
+                }}
+                className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors text-sm"
+              >
+                🔄 Try Iframe
+              </button>
+              <button
+                onClick={() => {
+                  window.open(websiteUrl, '_blank');
+                }}
+                className="bg-gray-700 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-gray-800 transition-colors text-sm"
+              >
+                🌐 Open
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <iframe
+              ref={iframeRef}
+              src={websiteUrl}
+              className="w-full h-full border-0"
+              title="Website Preview"
+              onLoad={() => {
+                // Iframe loaded successfully - clear any error state
+                console.log('Iframe loaded successfully');
+              }}
+            />
+            {iframeError && !useScreenshot && (
+              <div className="absolute top-4 right-4 z-10">
+                <button
+                  onClick={() => setUseScreenshot(true)}
+                  className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 transition-colors text-sm"
+                >
+                  📸 Use Screenshot Instead
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Game Overlay */}
-      {isGameLaunched && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" onClick={handleOutsideClick}>
+        {/* Game Overlay */}
+        {isGameLaunched && (
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center" onClick={handleOutsideClick}>
           {/* Game Container */}
           <div className="relative" onClick={(e) => e.stopPropagation()}>
             {/* Close Button */}
@@ -645,320 +1352,12 @@ export default function Home() {
                   <div className="text-lg font-medium text-white">Generating your masterpiece...</div>
                 </div>
               )}
-              {error && <div className="text-red-500 p-4">{error}</div>}
-              
-              {frameImageUrl ? (
-                <>
-                  {renderInteractiveImage()}
-                  <div style={{...wheelStyle, ...getWheelZIndex()}}>
-                     <Wheel key={segments} numSegments={segments} />
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <div className="w-3/4">
-                    <Wheel key={segments} numSegments={segments} />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Settings Modal */}
-          {showSettings && (
-            <div className="fixed inset-0 bg-black/70 z-70 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl w-full max-w-6xl h-[80vh] flex">
-                {/* Left Panel - Settings */}
-                <div className="w-1/2 p-6 border-r border-gray-200 overflow-y-auto">
-                  <h2 className="text-2xl font-bold mb-6">Game Settings</h2>
-                  
-                  {/* Website URL Input */}
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">
-                      Website URL (for iframe)
-                    </label>
-                    <input
-                      type="url"
-                      value={websiteUrl}
-                      onChange={(e) => setWebsiteUrl(e.target.value)}
-                      placeholder="https://example.com"
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Enter the URL of the website to display in the background</p>
-                  </div>
-
-                  {/* Segments Control */}
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">
-                      Segments (2-5): {segments}
-                    </label>
-                    <input
-                      type="number"
-                      min="2"
-                      max="5"
-                      value={inputValue}
-                      onChange={handleInputChange}
-                      onBlur={handleInputBlur}
-                      className="w-24 p-2 text-center border border-gray-300 rounded-md"
-                    />
-                  </div>
-
-                  {/* Theme Selection */}
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-3">Frame Theme</label>
-                    <select
-                      value={selectedTheme}
-                      onChange={(e) => setSelectedTheme(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded-md"
-                    >
-                      <optgroup label="Classic">
-                        <option value="luxury">Luxury</option>
-                        <option value="christmas">Christmas</option>
-                        <option value="steampunk">Steampunk</option>
-                      </optgroup>
-                      
-                      <optgroup label="Organic & Naturalistic">
-                        <option value="carved-wood">Intricate Carved Wood</option>
-                        <option value="moss-stone">Moss & Lichen Stone</option>
-                        <option value="crystalline-geode">Crystalline Geodes</option>
-                      </optgroup>
-                      
-                      <optgroup label="Mythical & Fantastical">
-                        <option value="dragon-scale">Dragon Scale & Horn</option>
-                        <option value="elven-wood">Elven Glowing Wood</option>
-                        <option value="obsidian-runes">Obsidian & Silver Runes</option>
-                      </optgroup>
-                      
-                      <optgroup label="Cyberpunk & Futuristic">
-                        <option value="neon-holographic">Neon Holographic Lattice</option>
-                        <option value="circuit-board">Integrated Circuit Board</option>
-                        <option value="glitch-art">Glitch-art with Data Streams</option>
-                      </optgroup>
-                      
-                      <optgroup label="Biopunk">
-                        <option value="bio-luminescent">Bio-luminescent Fungi</option>
-                        <option value="engineered-flora">Genetically Engineered Flora</option>
-                      </optgroup>
-                      
-                      <optgroup label="Art Deco">
-                        <option value="art-deco-sunburst">Sunbursts & Exotic Wood</option>
-                        <option value="art-deco-lacquer">Black Lacquer & Gold Leaf</option>
-                      </optgroup>
-                    </select>
-        </div>
-
-                  {/* Prompt Input */}
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">
-                      Prompt (Editable)
-                    </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-                      className="w-full p-2 border border-gray-300 rounded-md resize-y"
-                    />
-                  </div>
-
-                  {/* System Prompt Input */}
-                  <div className="mb-6">
-                    <label className="block text-gray-700 font-medium mb-2">
-                      System Prompt (Editable)
-                    </label>
-                    <textarea
-                      value={systemPrompt}
-                      onChange={(e) => setSystemPrompt(e.target.value)}
-                      rows={4}
-                      className="w-full p-2 border border-gray-300 rounded-md resize-y"
-                      placeholder="Enter system prompt for AI guardrails..."
-            />
-          </div>
-
-                  {/* Image Editing Controls */}
-                  {frameImageUrl && (
-                    <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-gray-800">Image Editing</h3>
-                        
-                        {/* Undo/Redo Buttons */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleUndo}
-                            disabled={historyIndex <= 0}
-                            className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            title="Undo (Cmd/Ctrl+Z)"
-                          >
-                            ↶ Undo
-                          </button>
-                          <button
-                            onClick={handleRedo}
-                            disabled={historyIndex >= history.length - 1}
-                            className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            title="Redo (Cmd/Ctrl+Shift+Z)"
-                          >
-                            ↷ Redo
-                          </button>
-                        </div>
-                      </div>
-                      
-                      {/* Layer Order Toggle */}
-                      <div className="mb-4 p-3 bg-white rounded-md border border-blue-300">
-                        <label className="flex items-center justify-between cursor-pointer">
-                          <span className="text-sm font-medium text-gray-700">
-                            Frame Layer
-                          </span>
-                          <div className="flex items-center gap-3">
-                            <span className={`text-xs ${!frameOnTop ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
-                              Behind
-                            </span>
-                            <div className="relative inline-block w-12 h-6">
-                              <input
-                                type="checkbox"
-                                checked={frameOnTop}
-                                onChange={(e) => setFrameOnTop(e.target.checked)}
-                                className="sr-only peer"
-                              />
-                              <div className="w-12 h-6 bg-gray-300 rounded-full peer peer-checked:bg-blue-600 peer-focus:ring-2 peer-focus:ring-blue-300 transition-colors"></div>
-                              <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
-                            </div>
-                            <span className={`text-xs ${frameOnTop ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
-                              On Top
-                            </span>
-                          </div>
-                        </label>
-                        <p className="text-xs text-gray-500 mt-2">
-                          {frameOnTop ? 'Frame is above the wheel (default)' : 'Wheel is above the frame'}
-                        </p>
-                      </div>
-                      
-                      {/* Scale Control */}
-                      <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-medium mb-2">
-                          Scale: {imageScale}%
-                        </label>
-                        <input
-                          type="range"
-                          min="50"
-                          max="200"
-                          value={imageScale}
-                          onChange={(e) => setImageScale(Number(e.target.value))}
-                          onMouseUp={saveToHistory}
-                          onTouchEnd={saveToHistory}
-                          className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                        />
-                      </div>
-
-                      {/* Position Controls */}
-                      <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-medium mb-2">
-                          Position
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-xs text-gray-600">X: {imagePosition.x}px</label>
-                            <input
-                              type="range"
-                              min="-100"
-                              max="100"
-                              value={imagePosition.x}
-                              onChange={(e) => setImagePosition({...imagePosition, x: Number(e.target.value)})}
-                              onMouseUp={saveToHistory}
-                              onTouchEnd={saveToHistory}
-                              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-600">Y: {imagePosition.y}px</label>
-                            <input
-                              type="range"
-                              min="-100"
-                              max="100"
-                              value={imagePosition.y}
-                              onChange={(e) => setImagePosition({...imagePosition, y: Number(e.target.value)})}
-                              onMouseUp={saveToHistory}
-                              onTouchEnd={saveToHistory}
-                              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Stretch Controls */}
-                      <div className="mb-4">
-                        <label className="block text-gray-700 text-sm font-medium mb-2">
-                          Stretch / Fit
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-xs text-gray-600">Width: {imageStretch.width}%</label>
-                            <input
-                              type="range"
-                              min="50"
-                              max="150"
-                              value={imageStretch.width}
-                              onChange={(e) => setImageStretch({...imageStretch, width: Number(e.target.value)})}
-                              onMouseUp={saveToHistory}
-                              onTouchEnd={saveToHistory}
-                              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-xs text-gray-600">Height: {imageStretch.height}%</label>
-                            <input
-                              type="range"
-                              min="50"
-                              max="150"
-                              value={imageStretch.height}
-                              onChange={(e) => setImageStretch({...imageStretch, height: Number(e.target.value)})}
-                              onMouseUp={saveToHistory}
-                              onTouchEnd={saveToHistory}
-                              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Reset Button */}
-                      <button
-                        onClick={() => {
-                          setImageScale(100);
-                          setImagePosition({ x: 0, y: 0 });
-                          setImageStretch({ width: 100, height: 100 });
-                          setFrameOnTop(true);
-                        }}
-                        className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-                      >
-                        Reset All Edits
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Generate Frame Button */}
-                  <button
-                    onClick={handleGenerateFrame}
-                    disabled={isLoading}
-                    className="w-full px-4 py-2 font-semibold text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isLoading ? 'Generating...' : 'Generate Frame'}
-                  </button>
-
-                  {error && (
-                    <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg">
-                      <p className="text-red-600">{error}</p>
-                    </div>
-                  )}
-        </div>
-        
-                {/* Right Panel - Preview */}
-                <div className="w-1/2 p-6 bg-gray-50 flex flex-col">
-                  <h3 className="text-xl font-bold mb-4">Preview</h3>
-                  
-                  <div className="flex-1 flex items-center justify-center">
-                    <div className="relative w-[300px] h-[300px] mx-auto">
+          {error && <div className="text-red-500 p-4">{error}</div>}
+          
           {frameImageUrl ? (
             <>
-                          <img src={frameImageUrl} alt={`${selectedTheme} themed wheel frame`} className="absolute inset-0 h-full w-full object-contain pointer-events-none" style={getImageTransformStyle()} />
-                          <div style={{...wheelStyle, ...getWheelZIndex()}}>
+                  {renderInteractiveImage()}
+                  <div style={{...wheelStyle, ...getWheelZIndex()}}>
                  <Wheel key={segments} numSegments={segments} />
               </div>
             </>
@@ -969,22 +1368,10 @@ export default function Home() {
               </div>
             </div>
           )}
+            </div>        </div>
         </div>
+        )}
       </div>
-
-                  {/* Save Button */}
-                  <button
-                    onClick={handleSaveGame}
-                    className="w-full bg-green-500 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-600 transition-all mt-4"
-                  >
-                    Save Game
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
