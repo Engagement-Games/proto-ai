@@ -118,7 +118,7 @@ export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [iframeError, setIframeError] = useState(false);
-  const [useScreenshot, setUseScreenshot] = useState(false);
+  const [useScreenshot, setUseScreenshot] = useState(true);
   const [screenshotLoaded, setScreenshotLoaded] = useState(false);
   const [screenshotError, setScreenshotError] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -697,16 +697,16 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Left Panel - Settings */}
-      <div className="w-1/3 min-w-[400px] max-w-[600px] bg-white shadow-2xl overflow-y-auto">
+      <div className="w-1/3 min-w-[400px] max-w-[600px] bg-[#0e0e0e] shadow-2xl overflow-y-auto">
         <div className="p-6">
-          <h1 className="text-3xl font-bold mb-6 text-gray-800">Game Settings</h1>
+          <h1 className="text-3xl font-bold mb-6 text-[white]">AI Game Generation</h1>
           
           {!isGameLaunched ? (
             // Show only launch button when game is not launched
             <div className="flex items-center justify-center h-[calc(100vh-200px)]">
               <button
                 onClick={handleLaunchGame}
-                className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-8 py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-700 transition-all transform hover:scale-105 shadow-lg text-xl"
+                className=" text-white px-8 py-4 rounded-lg font-semibold bg-[#1e52f1] transition-all transform hover:scale-105 shadow-lg text-xl"
               >
                 🎮 Launch Game
               </button>
@@ -714,22 +714,14 @@ export default function Home() {
           ) : (
             // Show all settings when game is launched
             <div>
-              {/* Close Game Button */}
-              <button
-                onClick={handleCloseGame}
-                className="w-full mb-6 bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors"
-              >
-                ✕ Close Game
-              </button>
-
               {/* Tab Navigation */}
               <div className="flex border-b border-gray-200 mb-6">
                 <button
                   onClick={() => setActiveTab('settings')}
                   className={`flex-1 py-2 px-4 font-medium transition-colors ${
                     activeTab === 'settings'
-                      ? 'border-b-2 border-blue-500 text-blue-600'
-                      : 'text-gray-600 hover:text-gray-800'
+                      ? 'border-b-2 border-blue-500 text-[white]'
+                      : 'text-[#a1a1a5] hover:[white]'
                   }`}
                 >
                   Settings
@@ -738,8 +730,8 @@ export default function Home() {
                   onClick={() => setActiveTab('about')}
                   className={`flex-1 py-2 px-4 font-medium transition-colors ${
                     activeTab === 'about'
-                      ? 'border-b-2 border-blue-500 text-blue-600'
-                      : 'text-gray-600 hover:text-gray-800'
+                      ? 'border-b-2 border-blue-500 text-[white]'
+                      : 'text-[#a1a1a5] hover:[white]'
                   }`}
                 >
                   About
@@ -750,7 +742,7 @@ export default function Home() {
                 <>
               {/* Website URL Input */}
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-2">
+                <label className="block text-white font-medium mb-2">
                   Website URL (for iframe)
                 </label>
                 <div className="flex gap-2">
@@ -829,7 +821,7 @@ export default function Home() {
 
               {/* Segments Control */}
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-2">
+                <label className="block text-white font-medium mb-2">
                   Segments (2-5): {segments}
                 </label>
                 <input
@@ -845,7 +837,7 @@ export default function Home() {
 
               {/* Theme Selection */}
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-3">Frame Theme</label>
+                <label className="block text-white font-medium mb-3">Frame Theme</label>
                 <select
                   value={selectedTheme}
                   onChange={(e) => setSelectedTheme(e.target.value)}
@@ -898,7 +890,7 @@ export default function Home() {
 
               {/* Prompt Input */}
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-2">
+                <label className="block text-white font-medium mb-2">
                   Prompt (Editable)
                 </label>
             <textarea
@@ -911,7 +903,7 @@ export default function Home() {
 
               {/* System Prompt Input */}
               <div className="mb-6">
-                <label className="block text-gray-700 font-medium mb-2">
+                <label className="block text-white font-medium mb-2">
                   System Prompt (Editable)
                 </label>
                 <textarea
@@ -934,7 +926,7 @@ export default function Home() {
                       <button
                         onClick={handleUndo}
                         disabled={historyIndex <= 0}
-                        className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="px-3 py-1 text-sm font-medium text-white bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         title="Undo (Cmd/Ctrl+Z)"
                       >
                         ↶ Undo
@@ -942,7 +934,7 @@ export default function Home() {
                       <button
                         onClick={handleRedo}
                         disabled={historyIndex >= history.length - 1}
-                        className="px-3 py-1 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="px-3 py-1 text-sm font-medium text-white bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         title="Redo (Cmd/Ctrl+Shift+Z)"
                       >
                         ↷ Redo
@@ -953,7 +945,7 @@ export default function Home() {
                   {/* Layer Order Toggle */}
                   <div className="mb-4 p-3 bg-white rounded-md border border-blue-300">
                     <label className="flex items-center justify-between cursor-pointer">
-                      <span className="text-sm font-medium text-gray-700">
+                      <span className="text-sm font-medium text-white">
                         Frame Layer
                       </span>
                       <div className="flex items-center gap-3">
@@ -982,7 +974,7 @@ export default function Home() {
                   
                   {/* Scale Control */}
                   <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                    <label className="block text-white text-sm font-medium mb-2">
                       Scale: {imageScale}%
                     </label>
                     <input
@@ -999,7 +991,7 @@ export default function Home() {
 
                   {/* Position Controls */}
                   <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                    <label className="block text-white text-sm font-medium mb-2">
                       Position
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1034,7 +1026,7 @@ export default function Home() {
 
                   {/* Stretch Controls */}
                   <div className="mb-4">
-                    <label className="block text-gray-700 text-sm font-medium mb-2">
+                    <label className="block text-white text-sm font-medium mb-2">
                       Stretch / Fit
                     </label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1075,7 +1067,7 @@ export default function Home() {
                       setImageStretch({ width: 100, height: 100 });
                       setFrameOnTop(true);
                     }}
-                    className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                    className="w-full px-3 py-2 text-sm font-medium text-white bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                   >
                     Reset All Edits
                   </button>
@@ -1104,6 +1096,12 @@ export default function Home() {
               >
                 💾 Save Game
               </button>
+                  <button
+                onClick={handleCloseGame}
+                className="w-full mt-6 bg-red-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-600 transition-colors"
+              >
+                ✕ Close Game
+              </button>
                 </>
               ) : (
                 /* About Tab */
@@ -1120,7 +1118,7 @@ export default function Home() {
                             className="w-12 h-12 rounded-lg border-2 border-gray-300 shadow-sm"
                             style={{ backgroundColor: websiteData.primaryColor }}
                           />
-                          <span className="text-lg font-mono text-gray-700">{websiteData.primaryColor}</span>
+                          <span className="text-lg font-mono text-white">{websiteData.primaryColor}</span>
                         </div>
                       </div>
 
@@ -1161,7 +1159,7 @@ export default function Home() {
                             {websiteData.competitors.map((competitor, idx) => (
                               <span
                                 key={idx}
-                                className="bg-white px-3 py-1 rounded-full border border-gray-300 text-gray-700 text-sm"
+                                className="bg-white px-3 py-1 rounded-full border border-gray-300 text-white text-sm"
                               >
                                 {competitor}
                               </span>
@@ -1191,7 +1189,7 @@ export default function Home() {
                   ) : (
                     <div className="text-center py-12">
                       <div className="text-6xl mb-4">🔍</div>
-                      <h3 className="text-lg font-semibold text-gray-700 mb-2">No Website Data Yet</h3>
+                      <h3 className="text-lg font-semibold text-white mb-2">No Website Data Yet</h3>
                       <p className="text-gray-600 mb-6">
                         Enter a website URL in the Settings tab and click "Analyze" to get insights about the website.
                       </p>
@@ -1205,6 +1203,8 @@ export default function Home() {
                   )}
                 </div>
               )}
+                        
+
             </div>
           )}
         </div>
@@ -1214,29 +1214,12 @@ export default function Home() {
       <div className="flex-1 relative">
         {/* Website Iframe or Screenshot */}
         {useScreenshot || iframeError ? (
-          <div className="w-full h-full bg-gray-100 flex flex-col items-center justify-center overflow-auto relative">
+          <div className="w-full h-full overflow-auto relative">
             {!screenshotError && (
               <img
-                src={`https://image.thum.io/get/width/800/crop/1200/${encodeURIComponent(websiteUrl)}`}
+                src={`/beamlabs.png`}
                 alt="Website Screenshot"
-                className={`max-w-full h-auto ${!screenshotLoaded ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
-                onError={() => {
-                  console.log('Screenshot failed to load from thum.io');
-                  setScreenshotError(true);
-                }}
-                onLoad={() => {
-                  console.log('Screenshot loaded successfully');
-                  setScreenshotLoaded(true);
-                }}
               />
-            )}
-            
-            {!screenshotLoaded && !screenshotError && (
-              <div className="flex flex-col items-center justify-center gap-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-                <p className="text-gray-600 text-sm">Loading screenshot...</p>
-                <p className="text-gray-500 text-xs">This may take 5-10 seconds</p>
-              </div>
             )}
             
             {screenshotError && (
@@ -1252,7 +1235,7 @@ export default function Home() {
                     onClick={() => {
                       setScreenshotError(false);
                       setScreenshotLoaded(false);
-                      setUseScreenshot(false);
+                      setUseScreenshot(true);
                       setIframeError(false);
                     }}
                     className="bg-blue-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-blue-600 transition-colors text-sm"
@@ -1271,13 +1254,7 @@ export default function Home() {
               </div>
             )}
             
-            {screenshotLoaded && !screenshotError && (
-              <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-lg text-sm">
-                📸 Screenshot Mode (Site blocks embedding)
-              </div>
-            )}
-            
-            <div className="absolute top-4 right-4 z-10 flex gap-2">
+            {/* <div className="absolute top-4 right-4 z-10 flex gap-2">
               <button
                 onClick={() => {
                   setScreenshotError(false);
@@ -1297,7 +1274,7 @@ export default function Home() {
               >
                 🌐 Open
               </button>
-            </div>
+            </div> */}
           </div>
         ) : (
           <>
